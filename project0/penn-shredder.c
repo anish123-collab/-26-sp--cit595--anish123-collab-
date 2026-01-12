@@ -286,7 +286,7 @@ char *getCommandFromInput() {
     while(*end != '\0'){
         end++;
     }
-    while(end > start && (*end[-1] == ' ' || *end[-1] == '\t' || *end[-1] == '\n' || *end[-1] =='\r')){
+    while(end > start && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\n' || end[-1] =='\r')){
         end--;
     }
 
