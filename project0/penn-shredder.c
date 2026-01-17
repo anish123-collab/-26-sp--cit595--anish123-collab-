@@ -97,6 +97,11 @@ void killChildProcess() {
  * TODO: implement in project1b.
  */
 void alarmHandler(int sig) {
+    if(childPid != 0){
+        killChildProcess();
+        const char * catchphrase = "Bwahaha ... tonight I dine on turtle soup\n";
+        writeToStdout((char*)catchphrase);
+    }
 }
 
 /* Signal handler for SIGINT.
@@ -135,6 +140,11 @@ void registerSignalHandlers() {
         perror("Error in signal");
         exit(EXIT_FAILURE);
     }
+    if(signal(SIGALRM,alarmHandler) == SIG_ERR){
+         perror("Error in alarm signal");
+        exit(EXIT_FAILURE);
+
+    }
 }
 
 /* Prints the shell prompt and waits for input from user.
@@ -165,6 +175,7 @@ void executeShell(int timeout) {
 
     if (command != NULL) {
         childPid = fork();
+       
 
         if (childPid < 0) {
             perror("invalid: Error in creating child process");
@@ -191,6 +202,7 @@ void executeShell(int timeout) {
             free(command);
             exit(EXIT_FAILURE);
         } else {
+            alarm(timeout);
             do {
                 if (wait(&status) == -1) {
                     perror("invalid: Error in child process termination");
@@ -198,7 +210,9 @@ void executeShell(int timeout) {
                     exit(EXIT_FAILURE);
                 }
             } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+            alarm(0);
         }
+        childPid = 0;
         free(command);
     }
     }
