@@ -184,6 +184,11 @@ void executeShell(int timeout) {
         }
 
         if (childPid == 0) {
+        if (signal(SIGINT, SIG_IGN) == SIG_ERR) {
+            perror("invalid: signal");
+            exit(EXIT_FAILURE);
+    }
+
             char *argv[100];
             int argc = 0;
             char* token = strtok(command," \t");
@@ -202,7 +207,7 @@ void executeShell(int timeout) {
             free(command);
             exit(EXIT_FAILURE);
         } else {
-            alarm(timeout);
+             alarm(timeout);
             do {
                 if (wait(&status) == -1) {
                     perror("invalid: Error in child process termination");
