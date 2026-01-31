@@ -1,30 +1,30 @@
-# Define variable CC to be the compiler we want to use
-CC = clang
+# Define variable CC to be the compiler used in this project
+CC = gcc
 
-# Define CFLAGS for the flags we will want to use with clang
-# -g = debugging flag to enable gdb
-# -Wall = show compilation warnings
+# Define CFLAGS for the flags used along with the compiler
 CFLAGS = -g -Wall
 
 # Define TARGETS to be the targets to be run when calling 'make all'
-TARGETS = penn-shredder
+TARGETS = clean token-shell
+
+# Define SRCS to be the source files needed to compile 'token-shell'
+SRCS = tokenizer.h tokenizer.c token-shell.c
 
 # Define PHONY targets to prevent make from confusing the phony target with the same file names
 .PHONY: clean all
 
-# If no arguments are passed to make, it will attempt the 'penn-shredder' target
-default: penn-shredder
+# If no arguments are passed to make, it will attempt the 'token-shell' target
+default: token-shell
 
-# This runs the targets listed in the TARGETS variable when 'make all' is run
+# This runs the 'clean' and 'token-shell' targets when 'make all' is run
 all: $(TARGETS)
 
-# This will construct the binary 'penn-shredder'
+# List of targets
 # $^ = names of all the prerequisites, with spaces between them
 # $@ = complete name of the target
-# $< = name of the first prerequisite
-penn-shredder: penn-shredder.c
-	$(CC) $(CFLAGS) $< -o $@
+token-shell: $(SRCS)
+	$(CC) $(CFLAGS) $^ -o $@
 
 # $(RM) is the platform agnostic way to delete a file (here rm -f)
 clean:
-	$(RM) penn-shredder
+	$(RM) token-shell
