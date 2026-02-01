@@ -6,6 +6,8 @@
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include "tokenizer.h"
+#include <fcntl.h>
 
 /* Macro to universaly define the size of the input.
  *
@@ -23,7 +25,7 @@
  *
  * In general, avoid the use of global variables in any code you write.
  */
-pid_t childPid = 0;
+
 
 /* In C, you must declare the function before
  * it is used elsewhere in your program.
@@ -36,12 +38,10 @@ pid_t childPid = 0;
  * You may choose to refactor this into a header file,
  * as long as you update your makefile orrectly.
  */
-void alarmHandler(int sig);
-void executeShell(int timeout);
+
+void executeShell(void);
 char *getCommandFromInput();
-void killChildProcess();
 void registerSignalHandlers();
-void sigintHandler(int sig);
 void writeToStdout(char *text);
 
 /* This is the main function.
@@ -55,18 +55,8 @@ void writeToStdout(char *text);
 int main(int argc, char **argv) {
     registerSignalHandlers();
 
-    int timeout = 0;
-    if (argc == 2) {
-        timeout = atoi(argv[1]);
-    }
-
-    if (timeout < 0) {
-        writeToStdout("Invalid input detected. Ignoring timeout value.\n");
-        timeout = 0;
-    }
-
     while (1) {
-        executeShell(timeout);
+        executeShell();
     }
 
     return 0;
@@ -86,44 +76,9 @@ void killChildProcess() {
     }
 }
 
-/* Signal handler for SIGALRM.
- *
- * It should kill the child process.
- *
- * It should then print out penn-shredder's catchphrase to standard output.
- *
- * If no child process currently exists, it should take no action.
- *
- * TODO: implement in project1b.
- */
-void alarmHandler(int sig) {
-    if(childPid != 0){
-        killChildProcess();
-        const char * catchphrase = "Bwahaha ... tonight I dine on turtle soup\n";
-        writeToStdout((char*)catchphrase);
-    }
-}
 
-/* Signal handler for SIGINT.
- *
- * Kills the child process if childPid is non-zero.
- *
- * Takes no action if the child process does not exist.
- *
- * Takes no action on  parent process and its execution.
- *
- * When a user enters Control+C, this sends the SIGINT signal to the program.
- * If this function is registered to run on SIGINT, 
- * it will run the function body instead of the default behaviour.
- * Read the manual pages for signal (section 7) to see the default behaviour of all signals.
- *
- * DO NOT modify this function, it is correctly implemented for you.
- */
-void sigintHandler(int sig) {
-    if (childPid != 0) {
-        killChildProcess();
-    }
-}
+
+
 
 
 /* Registers SIGALRM and SIGINT handlers with corresponding functions.
@@ -136,14 +91,9 @@ void sigintHandler(int sig) {
  * The SIGINT portion is implemented correctly for you.
  */
 void registerSignalHandlers() {
-    if (signal(SIGINT, sigintHandler) == SIG_ERR) {
+    if (signal(SIGINT, SIG_IGN) == SIG_ERR) {
         perror("Error in signal");
         exit(EXIT_FAILURE);
-    }
-    if(signal(SIGALRM,alarmHandler) == SIG_ERR){
-         perror("Error in alarm signal");
-        exit(EXIT_FAILURE);
-
     }
 }
 
@@ -159,68 +109,182 @@ void registerSignalHandlers() {
  * TODO: implement the alarm portion in project1b.
  * Use the timeout argument to start an alarm of that timeout period.
  * */
-void executeShell(int timeout) {
+void executeShell(voidf) {
     char *command;
     int status;
-    char minishell[] = "penn-shredder# ";
+    writeToStdout("penn-sh>");
 
-
-    while(1){
-    writeToStdout(minishell);
     command = getCommandFromInput();
+    if(command == NULL){
+        return;
+    }
     if(command[0] == '\0'){
         free(command);
         continue;
     }
-
-    if (command != NULL) {
-        childPid = fork();
-       
-
-        if (childPid < 0) {
-            perror("invalid: Error in creating child process");
-            free(command);
-            exit(EXIT_FAILURE);
-        }
-
-        if (childPid == 0) {
-        if (signal(SIGINT, SIG_IGN) == SIG_ERR) {
-            perror("invalid: signal");
-            exit(EXIT_FAILURE);
+     // Tokenize
+    TOKENIZER *tz = init_tokenizer(command);
+    if (tz == NULL) {
+        perror("invalid: tokenizer init");
+        free(command);
+        return;
     }
 
-            char *argv[100];
-            int argc = 0;
-            char* token = strtok(command," \t");
-            while(token != NULL){
-                if(argc >= 99){
-                    break;
-                }
-                argv[argc] = token;
-                argc++;
-                token = strtok(NULL," \t");
+    char *argv[100];
+    int argc = 0;
+    char *infile = NULL;
+    char *outfile = NULL;
+
+    int invalid = 0;
+    char *tok;
+     while( (tok = get_next_token(tz)) != NULL ){
+        if(strcmp(tok,'<') = 0){
+            free(tok);
+            if(infile != NULL){
+                 writeToStdout("Invalid reirection");
+                 invalid = 1;
+                 break;
+
             }
-            argv[argc] = NULL;
-            char *const envVariables[] = {NULL};
-            execve(argv[0],argv,envVariables);
+            char *nextFile = get_next_token(tz);
+            if(nextFile == NULL|| strcmp(nextFile,'<')== 0|| strcmp(nextFile, '>') == 0){
+                if(nextFile){
+                    free(nextFile);
+                }
+                writeToStdout("Invalid reirection-file");
+                invalid = 1;
+                break;
+
+            }
+            infile = nextFile;
+        } else if( strcmp(tok,'>') = 0){
+            free(tok);
+            if(outfile != NULL){
+                 writeToStdout("Invalid reirection");
+                 invalid = 1;
+                 break;
+
+            }
+            char *nextOutFile = get_next_token(tz);
+            if(nextOutFile == null || strcmp(nextOutFile,'<')== 0|| strcmp(nexOutFile, '>') == 0){
+                if(nextFile){
+                    free(nextFile);
+                }
+                writeToStdout("Invalid reirection-file");
+                invalid = 1;
+                break;
+
+            }
+           outfile = nextOutFile;
+        }
+        else{
+            if (argc >= 99) {
+                free(tok);
+                writeToStdout("invalid: too many arguments\n");
+                invalid = 1;
+                break;
+            }
+            argv[argc++] = tok;
+        }
+        
+     }
+     free_tokenizer(tz);
+     if(invalid == 1|| argc == 0){
+        for(int i = 0; i < argc; i++ ){
+            free(argc[i])
+            if(infile){
+                free(infile);
+            }
+            if(outfile){
+                free(outfile);
+            }
+            free(command);
+            return;
+        }
+     }
+     argv[argc] = NULL;
+
+    pid_t pid = fork();
+
+        if (pid< 0) {
+            perror("invalid: Error in creating child process");
+            for(int i = 0; i < argc; i++ ){
+            free(argc[i])
+            if(infile){
+                free(infile);
+            }
+            if(outfile){
+                free(outfile);
+            }
+            free(command);
+            exit(EXIT_FAILURE);
+            return;
+        }
+
+        if (pid == 0) {
+            f (signal(SIGINT, SIG_DFL) == SIG_ERR) {
+            perror("invalid: signal");
+            exit(EXIT_FAILURE);
+         }
+
+        if(infile){
+            int number;
+            number = open(infile,O_RDONLY);
+            if(number < 0){
+                perror("Invalid opening infile");
+                exit(EXIT_FAILURE);
+            }
+            int dupNum
+            dupNum = dup2(number,STDIN_FILENO)
+            if(dupNum < 0){
+                perror("Invalid opening dup2");
+                exit(EXIT_FAILURE);
+            }
+            close(fd);
+        }
+        if(outfile){
+            int number1;
+            number1 = open(outfile, O_WRONLY | O_TRUNC | O_CREAT, 0644);
+            if(number1 < 0){
+                perror("Invalid opening infile");
+                exit(EXIT_FAILURE);
+            }
+            int dupNum1
+            dupNum1 = dup2(number1,STDOUT_FILENO)
+            if(dupNum1 < 0){
+                perror("Invalid opening dup2");
+                exit(EXIT_FAILURE);
+            }
+            close(fd);
+        }
+         
+
+            
+            execvp(argv[0],argv);
             perror("invalid: Error in execve");
             free(command);
             exit(EXIT_FAILURE);
         } else {
-             alarm(timeout);
             do {
-                if (wait(&status) == -1) {
+                if (waitpid(pid,&status, 0) < 0) {
                     perror("invalid: Error in child process termination");
                     free(command);
                     exit(EXIT_FAILURE);
+                    break;
                 }
             } while (!WIFEXITED(status) && !WIFSIGNALED(status));
-            alarm(0);
         }
-        childPid = 0;
-        free(command);
+        for(int i = 0; i < argc; i++ ){
+            free(argc[i])
+            if(infile){
+                free(infile);
+            }
+            if(outfile){
+                free(outfile);
+            }
+            free(command);
     }
-    }
+    
 }
 
 /* Writes particular text to standard output.
