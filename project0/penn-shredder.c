@@ -43,6 +43,7 @@ void executeShell(void);
 char *getCommandFromInput();
 void registerSignalHandlers();
 void writeToStdout(char *text);
+pid_t childPid = -1;
 
 /* This is the main function.
  *
@@ -70,7 +71,7 @@ int main(int argc, char **argv) {
  * DO NOT modify this function, it is correctly implemented for you.
  */
 void killChildProcess() {
-    if (kill(childPid, SIGKILL) == -1) {
+    if (childPid > 0 && kill(childPid, SIGKILL) == -1) {
         perror("Error in kill");
         exit(EXIT_FAILURE);
     }
@@ -92,37 +93,28 @@ void killChildProcess() {
  */
 void registerSignalHandlers() {
     if (signal(SIGINT, SIG_IGN) == SIG_ERR) {
-        perror("Error in signal");
+        perror("invalid: signal");
         exit(EXIT_FAILURE);
     }
 }
 
-/* Prints the shell prompt and waits for input from user.
- *
- * It then creates a child process which executes the command.
- *
- * The parent process waits for the child and checks that
- * it was either signalled or exited.
- *
- * TODO: you may modify this function for project1a and project1b.
- *
- * TODO: implement the alarm portion in project1b.
- * Use the timeout argument to start an alarm of that timeout period.
- * */
-void executeShell(voidf) {
+
+void executeShell(void) {
     char *command;
     int status;
-    writeToStdout("penn-sh>");
+
+    writeToStdout("penn-sh> ");
 
     command = getCommandFromInput();
-    if(command == NULL){
+    if (command == NULL) {
         return;
     }
-    if(command[0] == '\0'){
+    if (command[0] == '\0') {
         free(command);
-        continue;
+        return;
     }
-     // Tokenize
+
+    // Tokenize
     TOKENIZER *tz = init_tokenizer(command);
     if (tz == NULL) {
         perror("invalid: tokenizer init");
@@ -137,47 +129,45 @@ void executeShell(voidf) {
 
     int invalid = 0;
     char *tok;
-     while( (tok = get_next_token(tz)) != NULL ){
-        if(strcmp(tok,'<') = 0){
-            free(tok);
-            if(infile != NULL){
-                 writeToStdout("Invalid reirection");
-                 invalid = 1;
-                 break;
 
-            }
-            char *nextFile = get_next_token(tz);
-            if(nextFile == NULL|| strcmp(nextFile,'<')== 0|| strcmp(nextFile, '>') == 0){
-                if(nextFile){
-                    free(nextFile);
-                }
-                writeToStdout("Invalid reirection-file");
+    while ((tok = get_next_token(tz)) != NULL) {
+        if (strcmp(tok, "<") == 0) {
+            free(tok);
+
+            if (infile != NULL) {
+                writeToStdout("invalid: multiple standard input redirects or redirect in invalid location\n");
                 invalid = 1;
                 break;
+            }
 
+            char *nextFile = get_next_token(tz);
+            if (nextFile == NULL || strcmp(nextFile, "<") == 0 || strcmp(nextFile, ">") == 0) {
+                if (nextFile) free(nextFile);
+                writeToStdout("invalid: Invalid standard input redirect\n");
+                invalid = 1;
+                break;
             }
             infile = nextFile;
-        } else if( strcmp(tok,'>') = 0){
+        }
+        else if (strcmp(tok, ">") == 0) {
             free(tok);
-            if(outfile != NULL){
-                 writeToStdout("Invalid reirection");
-                 invalid = 1;
-                 break;
 
-            }
-            char *nextOutFile = get_next_token(tz);
-            if(nextOutFile == null || strcmp(nextOutFile,'<')== 0|| strcmp(nexOutFile, '>') == 0){
-                if(nextFile){
-                    free(nextFile);
-                }
-                writeToStdout("Invalid reirection-file");
+            if (outfile != NULL) {
+                writeToStdout("invalid: Multiple standard output redirects\n");
                 invalid = 1;
                 break;
-
             }
-           outfile = nextOutFile;
+
+            char *nextOutFile = get_next_token(tz);
+            if (nextOutFile == NULL || strcmp(nextOutFile, "<") == 0 || strcmp(nextOutFile, ">") == 0) {
+                if (nextOutFile) free(nextOutFile);
+                writeToStdout("invalid: Invalid standard output redirect\n");
+                invalid = 1;
+                break;
+            }
+            outfile = nextOutFile;
         }
-        else{
+        else {
             if (argc >= 99) {
                 free(tok);
                 writeToStdout("invalid: too many arguments\n");
@@ -186,106 +176,87 @@ void executeShell(voidf) {
             }
             argv[argc++] = tok;
         }
-        
-     }
-     free_tokenizer(tz);
-     if(invalid == 1|| argc == 0){
-        for(int i = 0; i < argc; i++ ){
-            free(argc[i])
-            if(infile){
-                free(infile);
-            }
-            if(outfile){
-                free(outfile);
-            }
-            free(command);
-            return;
-        }
-     }
-     argv[argc] = NULL;
+    }
+
+    free_tokenizer(tz);
+
+    if (invalid || argc == 0) {
+        for (int i = 0; i < argc; i++) free(argv[i]);
+        if (infile) free(infile);
+        if (outfile) free(outfile);
+        free(command);
+        return;
+    }
+
+    argv[argc] = NULL;
 
     pid_t pid = fork();
+    if (pid < 0) {
+        perror("invalid: Error in creating child process");
+        for (int i = 0; i < argc; i++) free(argv[i]);
+        if (infile) free(infile);
+        if (outfile) free(outfile);
+        free(command);
+        exit(EXIT_FAILURE);
+    }
 
-        if (pid< 0) {
-            perror("invalid: Error in creating child process");
-            for(int i = 0; i < argc; i++ ){
-            free(argc[i])
-            if(infile){
-                free(infile);
-            }
-            if(outfile){
-                free(outfile);
-            }
-            free(command);
-            exit(EXIT_FAILURE);
-            return;
-        }
-
-        if (pid == 0) {
-            f (signal(SIGINT, SIG_DFL) == SIG_ERR) {
+    if (pid == 0) {
+        if (signal(SIGINT, SIG_DFL) == SIG_ERR) {
             perror("invalid: signal");
             exit(EXIT_FAILURE);
-         }
+        }
 
-        if(infile){
-            int number;
-            number = open(infile,O_RDONLY);
-            if(number < 0){
-                perror("Invalid opening infile");
+        if (infile) {
+            int fd = open(infile, O_RDONLY);
+            if (fd < 0) {
+                perror("invalid: Invalid standard input redirect");
                 exit(EXIT_FAILURE);
             }
-            int dupNum
-            dupNum = dup2(number,STDIN_FILENO)
-            if(dupNum < 0){
-                perror("Invalid opening dup2");
+            if (dup2(fd, STDIN_FILENO) < 0) {
+                perror("invalid: dup2");
+                close(fd);
                 exit(EXIT_FAILURE);
             }
             close(fd);
         }
-        if(outfile){
-            int number1;
-            number1 = open(outfile, O_WRONLY | O_TRUNC | O_CREAT, 0644);
-            if(number1 < 0){
-                perror("Invalid opening infile");
+
+        if (outfile) {
+            int fd = open(outfile, O_WRONLY | O_TRUNC | O_CREAT, 0644);
+            if (fd < 0) {
+                perror("invalid: Invalid standard output redirect");
                 exit(EXIT_FAILURE);
             }
-            int dupNum1
-            dupNum1 = dup2(number1,STDOUT_FILENO)
-            if(dupNum1 < 0){
-                perror("Invalid opening dup2");
+            if (dup2(fd, STDOUT_FILENO) < 0) {
+                perror("invalid: dup2");
+                close(fd);
                 exit(EXIT_FAILURE);
             }
             close(fd);
         }
-         
 
-            
-            execvp(argv[0],argv);
-            perror("invalid: Error in execve");
-            free(command);
-            exit(EXIT_FAILURE);
-        } else {
-            do {
-                if (waitpid(pid,&status, 0) < 0) {
-                    perror("invalid: Error in child process termination");
-                    free(command);
-                    exit(EXIT_FAILURE);
-                    break;
-                }
-            } while (!WIFEXITED(status) && !WIFSIGNALED(status));
-        }
-        for(int i = 0; i < argc; i++ ){
-            free(argc[i])
-            if(infile){
-                free(infile);
-            }
-            if(outfile){
-                free(outfile);
-            }
-            free(command);
+        execvp(argv[0], argv);
+        perror("invalid: Error in execvp");
+        exit(EXIT_FAILURE);
     }
+
     
+    childPid = pid;
+
+    do {
+        if (waitpid(pid, &status, 0) < 0) {
+            perror("invalid: Error in child process termination");
+            break;
+        }
+    } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+
+    childPid = -1;
+
+    for (int i = 0; i < argc; i++) free(argv[i]);
+    if (infile) free(infile);
+    if (outfile) free(outfile);
+    free(command);
 }
+
 
 /* Writes particular text to standard output.
  *
@@ -295,7 +266,7 @@ void executeShell(voidf) {
  */
 void writeToStdout(char *text) {
     if (write(STDOUT_FILENO, text, strlen(text)) == -1) {
-        perror("Error in write");
+        perror("invalid: write");
         exit(EXIT_FAILURE);
     }
 }
