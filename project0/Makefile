@@ -1,30 +1,23 @@
-# Define variable CC to be the compiler used in this project
+# Compiler
 CC = gcc
 
-# Define CFLAGS for the flags used along with the compiler
+# Flags
 CFLAGS = -g -Wall
 
-# Define TARGETS to be the targets to be run when calling 'make all'
-TARGETS = clean token-shell
+# Default target 
+default: penn-shredder
 
-# Define SRCS to be the source files needed to compile 'token-shell'
-SRCS = tokenizer.h tokenizer.c token-shell.c
+# Build both programs 
+all: clean penn-shredder token-shell
 
-# Define PHONY targets to prevent make from confusing the phony target with the same file names
-.PHONY: clean all
 
-# If no arguments are passed to make, it will attempt the 'token-shell' target
-default: token-shell
+# Build the shell (THIS is what the autograder wants)
+penn-shredder: penn-shredder.c tokenizer.c tokenizer.h
+	$(CC) $(CFLAGS) penn-shredder.c tokenizer.c -o $@
 
-# This runs the 'clean' and 'token-shell' targets when 'make all' is run
-all: $(TARGETS)
+# Keep token-shell available (optional)
+token-shell: token-shell.c tokenizer.c tokenizer.h
+	$(CC) $(CFLAGS) token-shell.c tokenizer.c -o $@
 
-# List of targets
-# $^ = names of all the prerequisites, with spaces between them
-# $@ = complete name of the target
-token-shell: $(SRCS)
-	$(CC) $(CFLAGS) $^ -o $@
-
-# $(RM) is the platform agnostic way to delete a file (here rm -f)
 clean:
-	$(RM) token-shell
+	$(RM) -f penn-shredder token-shell *.o
