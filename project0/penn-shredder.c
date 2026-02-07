@@ -98,7 +98,6 @@ void registerSignalHandlers() {
     }
 }
 
-
 void executeShell(void) {
     char *command;
     int status;
@@ -114,7 +113,6 @@ void executeShell(void) {
         return;
     }
 
-    // Tokenize
     TOKENIZER *tz = init_tokenizer(command);
     if (tz == NULL) {
         perror("invalid: tokenizer init");
@@ -122,140 +120,373 @@ void executeShell(void) {
         return;
     }
 
-    char *argv[100];
-    int argc = 0;
-    char *infile = NULL;
-    char *outfile = NULL;
+    char *argvL[100];
+    char *argvR[100];
+    int argcL = 0;
+    int argcR = 0;
+
+    char *infileL = NULL;
+    char *outfileL = NULL;
+    char *infileR = NULL;
+    char *outfileR = NULL;
 
     int invalid = 0;
+    int sawPipe = 0;
+    int side = 0;   /* 0 = left, 1 = right */
+
     char *tok;
 
     while ((tok = get_next_token(tz)) != NULL) {
+
+        /* PIPE */
+        if (strcmp(tok, "|") == 0) {
+            free(tok);
+
+            if (sawPipe) {
+                writeToStdout("invalid: multiple pipes\n");
+                invalid = 1;
+                break;
+            }
+            if (argcL == 0) {
+                writeToStdout("invalid: pipe in invalid location\n");
+                invalid = 1;
+                break;
+            }
+
+            sawPipe = 1;
+            side = 1;
+            continue;
+        }
+
+        /* INPUT REDIRECT */
         if (strcmp(tok, "<") == 0) {
             free(tok);
 
-            if (infile != NULL) {
-                writeToStdout("invalid: multiple standard input redirects or redirect in invalid location\n");
-                invalid = 1;
-                break;
+            if (side == 0) {
+                if (infileL != NULL) {
+                    writeToStdout("invalid: multiple standard input redirects or redirect in invalid location\n");
+                    invalid = 1;
+                    break;
+                }
+                char *nextFile = get_next_token(tz);
+                if (nextFile == NULL ||
+                    strcmp(nextFile, "<") == 0 ||
+                    strcmp(nextFile, ">") == 0 ||
+                    strcmp(nextFile, "|") == 0) {
+                    if (nextFile) free(nextFile);
+                    writeToStdout("invalid: Invalid standard input redirect\n");
+                    invalid = 1;
+                    break;
+                }
+                infileL = nextFile;
+            } else {
+                if (infileR != NULL) {
+                    writeToStdout("invalid: multiple standard input redirects or redirect in invalid location\n");
+                    invalid = 1;
+                    break;
+                }
+                char *nextFile = get_next_token(tz);
+                if (nextFile == NULL ||
+                    strcmp(nextFile, "<") == 0 ||
+                    strcmp(nextFile, ">") == 0 ||
+                    strcmp(nextFile, "|") == 0) {
+                    if (nextFile) free(nextFile);
+                    writeToStdout("invalid: Invalid standard input redirect\n");
+                    invalid = 1;
+                    break;
+                }
+                infileR = nextFile;
             }
-
-            char *nextFile = get_next_token(tz);
-            if (nextFile == NULL || strcmp(nextFile, "<") == 0 || strcmp(nextFile, ">") == 0) {
-                if (nextFile) free(nextFile);
-                writeToStdout("invalid: Invalid standard input redirect\n");
-                invalid = 1;
-                break;
-            }
-            infile = nextFile;
+            continue;
         }
-        else if (strcmp(tok, ">") == 0) {
+
+        /* OUTPUT REDIRECT */
+        if (strcmp(tok, ">") == 0) {
             free(tok);
 
-            if (outfile != NULL) {
-                writeToStdout("invalid: Multiple standard output redirects\n");
-                invalid = 1;
-                break;
+            if (side == 0) {
+                if (outfileL != NULL) {
+                    writeToStdout("invalid: Multiple standard output redirects\n");
+                    invalid = 1;
+                    break;
+                }
+                char *nextOut = get_next_token(tz);
+                if (nextOut == NULL ||
+                    strcmp(nextOut, "<") == 0 ||
+                    strcmp(nextOut, ">") == 0 ||
+                    strcmp(nextOut, "|") == 0) {
+                    if (nextOut) free(nextOut);
+                    writeToStdout("invalid: Invalid standard output redirect\n");
+                    invalid = 1;
+                    break;
+                }
+                outfileL = nextOut;
+            } else {
+                if (outfileR != NULL) {
+                    writeToStdout("invalid: Multiple standard output redirects\n");
+                    invalid = 1;
+                    break;
+                }
+                char *nextOut = get_next_token(tz);
+                if (nextOut == NULL ||
+                    strcmp(nextOut, "<") == 0 ||
+                    strcmp(nextOut, ">") == 0 ||
+                    strcmp(nextOut, "|") == 0) {
+                    if (nextOut) free(nextOut);
+                    writeToStdout("invalid: Invalid standard output redirect\n");
+                    invalid = 1;
+                    break;
+                }
+                outfileR = nextOut;
             }
-
-            char *nextOutFile = get_next_token(tz);
-            if (nextOutFile == NULL || strcmp(nextOutFile, "<") == 0 || strcmp(nextOutFile, ">") == 0) {
-                if (nextOutFile) free(nextOutFile);
-                writeToStdout("invalid: Invalid standard output redirect\n");
-                invalid = 1;
-                break;
-            }
-            outfile = nextOutFile;
+            continue;
         }
-        else {
-            if (argc >= 99) {
+
+        /* NORMAL ARGUMENT TOKEN */
+        if (side == 0) {
+            if (argcL >= 99) {
                 free(tok);
                 writeToStdout("invalid: too many arguments\n");
                 invalid = 1;
                 break;
             }
-            argv[argc++] = tok;
+            argvL[argcL++] = tok;
+        } else {
+            if (argcR >= 99) {
+                free(tok);
+                writeToStdout("invalid: too many arguments\n");
+                invalid = 1;
+                break;
+            }
+            argvR[argcR++] = tok;
         }
     }
 
     free_tokenizer(tz);
 
-    if (invalid || argc == 0) {
-        for (int i = 0; i < argc; i++) free(argv[i]);
-        if (infile) free(infile);
-        if (outfile) free(outfile);
+    /* pipe cannot end without a right command */
+    if (!invalid && sawPipe && argcR == 0) {
+        writeToStdout("invalid: pipe in invalid location\n");
+        invalid = 1;
+    }
+
+    /* overlap rules with pipe */
+    if (!invalid && sawPipe) {
+        if (outfileL != NULL) {
+            writeToStdout("invalid: Invalid output redirection\n");
+            invalid = 1;
+        }
+        if (infileR != NULL) {
+            writeToStdout("invalid: Invalid standard input redirect\n");
+            invalid = 1;
+        }
+    }
+
+    if (invalid || argcL == 0) {
+        for (int i = 0; i < argcL; i++) free(argvL[i]);
+        for (int i = 0; i < argcR; i++) free(argvR[i]);
+        if (infileL) free(infileL);
+        if (outfileL) free(outfileL);
+        if (infileR) free(infileR);
+        if (outfileR) free(outfileR);
         free(command);
         return;
     }
 
-    argv[argc] = NULL;
-
-    pid_t pid = fork();
-    if (pid < 0) {
-        perror("invalid: Error in creating child process");
-        for (int i = 0; i < argc; i++) free(argv[i]);
-        if (infile) free(infile);
-        if (outfile) free(outfile);
-        free(command);
-        exit(EXIT_FAILURE);
+    argvL[argcL] = NULL;
+    if (sawPipe) {
+        argvR[argcR] = NULL;
     }
 
-    if (pid == 0) {
-        if (signal(SIGINT, SIG_DFL) == SIG_ERR) {
-            perror("invalid: signal");
+    /* ---------------- EXECUTION ---------------- */
+
+    if (!sawPipe) {
+        pid_t pid = fork();
+        if (pid < 0) {
+            perror("invalid: fork");
             exit(EXIT_FAILURE);
         }
 
-        if (infile) {
-            int fd = open(infile, O_RDONLY);
-            if (fd < 0) {
-                perror("invalid: Invalid standard input redirect");
+        if (pid == 0) {
+            if (signal(SIGINT, SIG_DFL) == SIG_ERR) {
+                perror("invalid: signal");
                 exit(EXIT_FAILURE);
             }
-            if (dup2(fd, STDIN_FILENO) < 0) {
-                perror("invalid: dup2");
+
+            if (infileL) {
+                int fd = open(infileL, O_RDONLY);
+                if (fd < 0) {
+                    perror("invalid: Invalid standard input redirect");
+                    exit(EXIT_FAILURE);
+                }
+                if (dup2(fd, STDIN_FILENO) < 0) {
+                    perror("invalid: dup2");
+                    close(fd);
+                    exit(EXIT_FAILURE);
+                }
                 close(fd);
-                exit(EXIT_FAILURE);
             }
-            close(fd);
+
+            if (outfileL) {
+                int fd = open(outfileL, O_WRONLY | O_TRUNC | O_CREAT, 0644);
+                if (fd < 0) {
+                    perror("invalid: Invalid standard output redirect");
+                    exit(EXIT_FAILURE);
+                }
+                if (dup2(fd, STDOUT_FILENO) < 0) {
+                    perror("invalid: dup2");
+                    close(fd);
+                    exit(EXIT_FAILURE);
+                }
+                close(fd);
+            }
+
+            execvp(argvL[0], argvL);
+            perror("invalid: execvp");
+            exit(EXIT_FAILURE);
         }
 
-        if (outfile) {
-            int fd = open(outfile, O_WRONLY | O_TRUNC | O_CREAT, 0644);
-            if (fd < 0) {
-                perror("invalid: Invalid standard output redirect");
-                exit(EXIT_FAILURE);
-            }
-            if (dup2(fd, STDOUT_FILENO) < 0) {
-                perror("invalid: dup2");
-                close(fd);
-                exit(EXIT_FAILURE);
-            }
-            close(fd);
+        childPid = pid;
+
+        while (waitpid(pid, &status, 0) >= 0 &&
+               !WIFEXITED(status) &&
+               !WIFSIGNALED(status)) {
+            /* loop */
         }
 
-        execvp(argv[0], argv);
-        perror("invalid: Error in execvp");
-        exit(EXIT_FAILURE);
+        childPid = -1;
+
+    } else {
+        int fds[2];
+        if (pipe(fds) < 0) {
+            perror("invalid: pipe");
+            for (int i = 0; i < argcL; i++) free(argvL[i]);
+            for (int i = 0; i < argcR; i++) free(argvR[i]);
+            if (infileL) free(infileL);
+            if (outfileL) free(outfileL);
+            if (infileR) free(infileR);
+            if (outfileR) free(outfileR);
+            free(command);
+            return;
+        }
+
+        pid_t leftPid = fork();
+        if (leftPid < 0) {
+            perror("invalid: fork");
+            close(fds[0]);
+            close(fds[1]);
+            for (int i = 0; i < argcL; i++) free(argvL[i]);
+            for (int i = 0; i < argcR; i++) free(argvR[i]);
+            if (infileL) free(infileL);
+            if (outfileL) free(outfileL);
+            if (infileR) free(infileR);
+            if (outfileR) free(outfileR);
+            free(command);
+            return;
+        }
+
+        if (leftPid == 0) {
+            if (signal(SIGINT, SIG_DFL) == SIG_ERR) {
+                perror("invalid: signal");
+                exit(EXIT_FAILURE);
+            }
+
+            if (dup2(fds[1], STDOUT_FILENO) < 0) {
+                perror("invalid: dup2");
+                exit(EXIT_FAILURE);
+            }
+
+            close(fds[0]);
+            close(fds[1]);
+
+            if (infileL) {
+                int fd = open(infileL, O_RDONLY);
+                if (fd < 0) {
+                    perror("invalid: Invalid standard input redirect");
+                    exit(EXIT_FAILURE);
+                }
+                if (dup2(fd, STDIN_FILENO) < 0) {
+                    perror("invalid: dup2");
+                    close(fd);
+                    exit(EXIT_FAILURE);
+                }
+                close(fd);
+            }
+
+            execvp(argvL[0], argvL);
+            perror("invalid: execvp");
+            exit(EXIT_FAILURE);
+        }
+
+        pid_t rightPid = fork();
+        if (rightPid < 0) {
+            perror("invalid: fork");
+            close(fds[0]);
+            close(fds[1]);
+            waitpid(leftPid, &status, 0);
+            for (int i = 0; i < argcL; i++) free(argvL[i]);
+            for (int i = 0; i < argcR; i++) free(argvR[i]);
+            if (infileL) free(infileL);
+            if (outfileL) free(outfileL);
+            if (infileR) free(infileR);
+            if (outfileR) free(outfileR);
+            free(command);
+            return;
+        }
+
+        if (rightPid == 0) {
+            if (signal(SIGINT, SIG_DFL) == SIG_ERR) {
+                perror("invalid: signal");
+                exit(EXIT_FAILURE);
+            }
+
+            if (dup2(fds[0], STDIN_FILENO) < 0) {
+                perror("invalid: dup2");
+                exit(EXIT_FAILURE);
+            }
+
+            close(fds[0]);
+            close(fds[1]);
+
+            if (outfileR) {
+                int fd = open(outfileR, O_WRONLY | O_TRUNC | O_CREAT, 0644);
+                if (fd < 0) {
+                    perror("invalid: Invalid standard output redirect");
+                    exit(EXIT_FAILURE);
+                }
+                if (dup2(fd, STDOUT_FILENO) < 0) {
+                    perror("invalid: dup2");
+                    close(fd);
+                    exit(EXIT_FAILURE);
+                }
+                close(fd);
+            }
+
+            execvp(argvR[0], argvR);
+            perror("invalid: execvp");
+            exit(EXIT_FAILURE);
+        }
+
+        close(fds[0]);
+        close(fds[1]);
+
+        /* wait for both children */
+        waitpid(leftPid, &status, 0);
+        waitpid(rightPid, &status, 0);
+
+        childPid = -1;
     }
 
-    
-    childPid = pid;
-
-    do {
-        if (waitpid(pid, &status, 0) < 0) {
-            perror("invalid: Error in child process termination");
-            break;
-        }
-    } while (!WIFEXITED(status) && !WIFSIGNALED(status));
-
-    childPid = -1;
-
-    for (int i = 0; i < argc; i++) free(argv[i]);
-    if (infile) free(infile);
-    if (outfile) free(outfile);
+    /* cleanup memory */
+    for (int i = 0; i < argcL; i++) free(argvL[i]);
+    for (int i = 0; i < argcR; i++) free(argvR[i]);
+    if (infileL) free(infileL);
+    if (outfileL) free(outfileL);
+    if (infileR) free(infileR);
+    if (outfileR) free(outfileR);
     free(command);
 }
+
 
 
 /* Writes particular text to standard output.
@@ -294,67 +525,110 @@ void writeToStdout(char *text) {
  * TODO: implement this function for project1a.
  */
 char *getCommandFromInput() {
-    char buffer[INPUT_SIZE];
+    static char stash[INPUT_SIZE];
+    static size_t stash_len = 0;
+
     char line[INPUT_SIZE];
-    size_t total = 0;
-    ssize_t number;
-    int done =0;
-    line[0] = '\0';
-    while(!done){
-    number = read(STDIN_FILENO,buffer,sizeof(buffer));
-    if(number == 0){
-        if(total == 0){
-        exit(0);
-        }
-        break;
-    }
-    if(number == -1){
-        perror("invalid: read");
-        exit(1);
+    size_t line_len = 0;
 
-    }
-     for(ssize_t i = 0; i < number; i++){
-        if(buffer[i] == '\n'){
-            done = 1;
+    while (1) {
+        /* 1) Look for newline already in stash */
+        int found_nl = 0;
+        size_t nl_pos = 0;
+
+        for (size_t i = 0; i < stash_len; i++) {
+            if (stash[i] == '\n') {
+                found_nl = 1;
+                nl_pos = i;
+                break;
+            }
+        }
+
+        if (found_nl) {
+            /* Copy up to newline into line */
+            size_t take = nl_pos;
+            if (take > INPUT_SIZE - 1) take = INPUT_SIZE - 1;
+
+            for (size_t j = 0; j < take; j++) {
+                line[j] = stash[j];
+            }
+            line[take] = '\0';
+            line_len = take;
+
+            /* Shift remaining bytes after newline to front of stash */
+            size_t remain = stash_len - (nl_pos + 1);
+            for (size_t j = 0; j < remain; j++) {
+                stash[j] = stash[nl_pos + 1 + j];
+            }
+            stash_len = remain;
             break;
         }
-        if(total < INPUT_SIZE -1){
-            line[total++] = buffer[i];
-        } else{
-            done = 1;
+
+        /* 2) Need more bytes: read into a temp buffer then append to stash */
+        char buffer[INPUT_SIZE];
+        ssize_t n = read(STDIN_FILENO, buffer, sizeof(buffer));
+
+        if (n == 0) {
+            /* EOF */
+            if (stash_len == 0) {
+                exit(0);
+            }
+
+            /* Return whatever is left as final line */
+            size_t take = stash_len;
+            if (take > INPUT_SIZE - 1) take = INPUT_SIZE - 1;
+
+            for (size_t j = 0; j < take; j++) {
+                line[j] = stash[j];
+            }
+            line[take] = '\0';
+            line_len = take;
+            stash_len = 0;
             break;
         }
-    }
-    }
-    
 
-    line[total] = '\0';
+        if (n < 0) {
+            perror("invalid: read");
+            exit(1);
+        }
 
-    char* start = line;
-    while(*start != '\0' &&( *start == ' ' || *start == '\t' || *start == '\n' || *start == '\r')){
+        /* Append to stash, truncating if stash is full */
+        for (ssize_t i = 0; i < n; i++) {
+            if (stash_len < INPUT_SIZE - 1) {
+                stash[stash_len++] = buffer[i];
+            } else {
+                /* If line is absurdly long, we just stop buffering more */
+                break;
+            }
+        }
+    }
+
+    (void)line_len; /* line_len is set but not strictly needed below */
+
+    /* Trim leading whitespace (space/tab/newline/\r) */
+    char *start = line;
+    while (*start != '\0' &&
+           (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r')) {
         start++;
-         
-        
     }
-    char* end = line;
-    while(*end != '\0'){
-        end++;
-    }
-    while(end > start && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\n' || end[-1] =='\r')){
+
+    /* Find end */
+    char *end = start;
+    while (*end != '\0') end++;
+
+    /* Trim trailing whitespace */
+    while (end > start &&
+           (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\n' || end[-1] == '\r')) {
         end--;
     }
-
     *end = '\0';
 
-    char* pointer = malloc(strlen(start) + 1);
-    if(pointer == NULL){
+    char *out = malloc(strlen(start) + 1);
+    if (out == NULL) {
         perror("invalid: malloc");
         exit(1);
     }
-    strcpy(pointer,start);
-
-    return pointer;
-
+    strcpy(out, start);
+    return out;
 }
-
 

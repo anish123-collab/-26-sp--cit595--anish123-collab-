@@ -1,0 +1,14 @@
+Makefile
+README
+README.txt
+echo
+in
+lsout
+out
+out2
+out3
+penn-shredder
+penn-shredder.c
+token-shell.c
+tokenizer.c
+tokenizer.h
