@@ -5,8 +5,66 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <pthread.h>
 
 #define BUFFER_SIZE 1024
+
+void *handle_client(void *arg) {
+    int clientfd = *(int *)arg;
+    free(arg);
+
+    char buffer[BUFFER_SIZE];
+    memset(buffer, 0, sizeof(buffer));
+
+    ssize_t bytes_received = recv(clientfd, buffer, sizeof(buffer) - 1, 0);
+    if (bytes_received <= 0) {
+        close(clientfd);
+        return NULL;
+    }
+
+    buffer[bytes_received] = '\0';
+
+    printf("%s\n", buffer);
+    fflush(stdout);
+
+    int x;
+    if (sscanf(buffer, "HELLO %d", &x) != 1) {
+        fprintf(stderr, "ERROR invalid first message format\n");
+        close(clientfd);
+        return NULL;
+    }
+
+    int y = x + 1;
+    char response[BUFFER_SIZE];
+    memset(response, 0, sizeof(response));
+    snprintf(response, sizeof(response), "HELLO %d", y);
+
+    if (send(clientfd, response, strlen(response), 0) < 0) {
+        perror("send");
+        close(clientfd);
+        return NULL;
+    }
+
+    memset(buffer, 0, sizeof(buffer));
+    bytes_received = recv(clientfd, buffer, sizeof(buffer) - 1, 0);
+
+    if (bytes_received > 0) {
+        buffer[bytes_received] = '\0';
+
+        printf("%s\n", buffer);
+        fflush(stdout);
+
+        int z;
+        if (sscanf(buffer, "HELLO %d", &z) != 1) {
+            fprintf(stderr, "ERROR invalid second message format\n");
+        } else if (z != y + 1) {
+            fprintf(stderr, "ERROR incorrect sequence number\n");
+        }
+    }
+
+    close(clientfd);
+    return NULL;
+}
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -41,63 +99,31 @@ int main(int argc, char *argv[]) {
     }
 
     while (1) {
-        int clientfd = accept(listendescriptor, NULL, NULL);
-        if (clientfd < 0) {
-            perror("accept");
-            continue;
-        }
-
-        char buffer[BUFFER_SIZE];
-        memset(buffer, 0, sizeof(buffer));
-
-        ssize_t bytes_received = recv(clientfd, buffer, sizeof(buffer) - 1, 0);
-        if (bytes_received <= 0) {
-            close(clientfd);
-            continue;
-        }
-
-        buffer[bytes_received] = '\0';
-
-        printf("%s\n", buffer);
-        fflush(stdout);
-
-        int x;
-        if (sscanf(buffer, "HELLO %d", &x) != 1) {
-            fprintf(stderr, "ERROR invalid first message format\n");
-            close(clientfd);
-            continue;
-        }
-
-        int y = x + 1;
-        char response[BUFFER_SIZE];
-        memset(response, 0, sizeof(response));
-        snprintf(response, sizeof(response), "HELLO %d", y);
-
-        if (send(clientfd, response, strlen(response), 0) < 0) {
-            perror("send");
-            close(clientfd);
-            continue;
-        }
-
-        memset(buffer, 0, sizeof(buffer));
-        bytes_received = recv(clientfd, buffer, sizeof(buffer) - 1, 0);
-
-        if (bytes_received > 0) {
-            buffer[bytes_received] = '\0';
-
-            printf("%s\n", buffer);
-            fflush(stdout);
-
-            int z;
-            if (sscanf(buffer, "HELLO %d", &z) != 1) {
-                fprintf(stderr, "ERROR invalid second message format\n");
-            } else if (z != y + 1) {
-                fprintf(stderr, "ERROR incorrect sequence number\n");
-            }
-        }
-
-        close(clientfd);
+    int clientfd = accept(listendescriptor, NULL, NULL);
+    if (clientfd < 0) {
+        perror("accept");
+        continue;
     }
+
+    int *clientfd_ptr = malloc(sizeof(int));
+    if (clientfd_ptr == NULL) {
+        perror("malloc");
+        close(clientfd);
+        continue;
+    }
+
+    *clientfd_ptr = clientfd;
+
+    pthread_t tid;
+    if (pthread_create(&tid, NULL, handle_client, clientfd_ptr) != 0) {
+        perror("pthread_create");
+        close(clientfd);
+        free(clientfd_ptr);
+        continue;
+    }
+
+    pthread_detach(tid);
+}
 
     close(listendescriptor);
     return 0;
