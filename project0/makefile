@@ -1,13 +1,13 @@
 CC = gcc
 CFLAGS = -Wall -g
 
-all: tcpclient tcpserver
+all: tcpclient multi-tcpserver
 
 tcpclient: tcpclient.c
 	$(CC) $(CFLAGS) -o tcpclient tcpclient.c
 
-tcpserver: tcpserver.c
-	$(CC) $(CFLAGS) -o tcpserver tcpserver.c
+multi-tcpserver: multi-tcpserver.c
+	$(CC) $(CFLAGS) -o multi-tcpserver multi-tcpserver.c -pthread
 
 clean:
-	rm -f tcpclient tcpserver
+	rm -f tcpclient multi-tcpserver
